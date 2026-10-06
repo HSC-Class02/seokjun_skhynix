@@ -1,57 +1,100 @@
 name: Monthly DART update and deploy
+
 on:
   workflow_dispatch:
   schedule:
-    - cron: "0 17 1 * *"
+    - cron: "0 17 1 * *" # 02:00 KST on the 1st
   push:
     branches: [main]
+
 permissions:
   contents: write
   pages: write
   id-token: write
+
 concurrency:
   group: "pages"
   cancel-in-progress: false
+
 jobs:
   update:
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-python@v5
+      - name: Checkout
+        uses: actions/checkout@v5
+
+      - name: Setup Python
+        uses: actions/setup-python@v7
         with:
           python-version: "3.12"
           cache: "pip"
+
       - name: Install dependencies
-        run: pip install -r requirements.txt
+        run: python -m pip install -r requirements.txt
+
+      - name: Validate DART API secret
+        env:
+          OPENDART_API_KEY: ${{ secrets.OPENDART_API_KEY }}
+        shell: bash
+        run: |
+          if [ -z "${OPENDART_API_KEY:-}" ]; then
+            echo "::error::GitHub Actions secret OPENDART_API_KEY is missing or empty."
+            echo "Create it at Settings > Secrets and variables > Actions > Repository secrets."
+            exit 1
+          fi
+          echo "OPENDART_API_KEY is configured."
+
       - name: Fetch DART
         env:
           OPENDART_API_KEY: ${{ secrets.OPENDART_API_KEY }}
         run: python scripts/fetch_dart.py
+
       - name: Analyze
         run: python scripts/analyze.py
+
       - name: Build dashboard
         run: python scripts/build_dashboard.py
+
+      - name: Validate generated outputs
+        shell: bash
+        run: |
+          test -s data/processed/financials.json
+          test -s docs/index.html
+          echo "Generated data and dashboard files are present."
+
       - name: Commit data and dashboard
+        shell: bash
         run: |
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
           git add data docs
-          git diff --cached --quiet || git commit -m "chore: update DART financial data"
-          git push
+          if git diff --cached --quiet; then
+            echo "No data/dashboard changes to commit."
+          else
+            git commit -m "chore: update DART financial data"
+            git push
+          fi
+
   deploy:
     needs: update
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     environment:
       name: github-pages
       url: ${{ steps.deployment.outputs.page_url }}
     steps:
-      - uses: actions/checkout@v4
+      - name: Checkout updated main
+        uses: actions/checkout@v5
         with:
           ref: main
-      - uses: actions/configure-pages@v5
-      - uses: actions/upload-pages-artifact@v3
+
+      - name: Configure GitHub Pages
+        uses: actions/configure-pages@v5
+
+      - name: Upload Pages artifact
+        uses: actions/upload-pages-artifact@v4
         with:
           path: docs
+
       - name: Deploy to GitHub Pages
         id: deployment
         uses: actions/deploy-pages@v4
