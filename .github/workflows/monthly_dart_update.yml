@@ -2,8 +2,10 @@ name: Monthly DART update and deploy
 
 on:
   workflow_dispatch:
+  # GitHub cron is UTC. 17:00 UTC is 02:00 the following day in Korea.
+  # Run daily and let the Seoul-time guard below select the first day of each month.
   schedule:
-    - cron: "0 15 28-31 * *" # Filter to the first day in Asia/Seoul
+    - cron: "0 17 * * *"
   push:
     branches: [main]
 
@@ -17,6 +19,8 @@ jobs:
     timeout-minutes: 20
     permissions:
       contents: write
+    outputs:
+      run_update: ${{ steps.schedule_check.outputs.run_update }}
     steps:
       - name: Checkout
         uses: actions/checkout@v5
@@ -46,20 +50,21 @@ jobs:
       - name: Validate DART API secret
         if: steps.schedule_check.outputs.run_update == 'true'
         env:
-          OPENDART_API_KEY: ${{ secrets.OPENDART_API_KEY }}
+          OPENDART_API_KEY: ${{ secrets.OPENDART_API_KEY || secrets.DART_API_KEY }}
         shell: bash
         run: |
           if [ -z "${OPENDART_API_KEY:-}" ]; then
-            echo "::error::GitHub Actions secret OPENDART_API_KEY is missing or empty."
-            echo "Create it at Settings > Secrets and variables > Actions > Repository secrets."
+            echo "::error::DART API secret is missing or empty."
+            echo "Create repository secret OPENDART_API_KEY (recommended) or DART_API_KEY."
+            echo "Go to Settings > Secrets and variables > Actions > Repository secrets."
             exit 1
           fi
-          echo "OPENDART_API_KEY is configured."
+          echo "A DART API secret is configured."
 
       - name: Fetch DART
         if: steps.schedule_check.outputs.run_update == 'true'
         env:
-          OPENDART_API_KEY: ${{ secrets.OPENDART_API_KEY }}
+          OPENDART_API_KEY: ${{ secrets.OPENDART_API_KEY || secrets.DART_API_KEY }}
         run: python scripts/fetch_dart.py
 
       - name: Analyze
@@ -76,7 +81,17 @@ jobs:
         run: |
           test -s data/processed/financials.json
           test -s docs/index.html
-          echo "Generated data and dashboard files are present."
+          python - <<'PY'
+          import json
+          from pathlib import Path
+          records = json.loads(Path("data/processed/financials.json").read_text(encoding="utf-8"))
+          if not isinstance(records, list) or not records:
+              raise SystemExit("financials.json must contain a non-empty JSON array")
+          html = Path("docs/index.html").read_text(encoding="utf-8")
+          if "SK hynix Financial Dashboard" not in html or "DATA_JSON" in html:
+              raise SystemExit("Dashboard HTML did not render the data placeholder correctly")
+          print(f"Validated {len(records)} financial records and dashboard HTML.")
+          PY
 
       - name: Commit data and dashboard
         if: steps.schedule_check.outputs.run_update == 'true'
@@ -94,6 +109,7 @@ jobs:
 
   deploy:
     needs: update
+    if: needs.update.outputs.run_update == 'true'
     runs-on: ubuntu-24.04
     timeout-minutes: 10
     permissions:

@@ -12,14 +12,16 @@ SK하이닉스(000660) DART 공시 기반 재무데이터 수집·분석·GitHub
 - Company: SK hynix Inc. (DART corp code: 00164779)
 - Target periods: Annual, Half-year, Quarterly
 - Historical target: 2010 onward where DART/API data are available
-- Monthly update: 1st day of each month at 02:00 KST
+- Monthly update: first day of each month at approximately 02:00 KST (GitHub scheduled-run timing may vary slightly)
 - Raw API responses and normalized data are retained in the repository.
+
+**Historical coverage note:** OpenDART's structured financial-statement endpoint does not provide the same normalized data for all years back to 2010. The pipeline requests 2010 onward, records DART no-data responses, and uses only available reported values; it does not fabricate missing historical data.
 
 ## Main indicators
 Revenue, gross profit, SG&A, operating income, income before tax, net income, controlling-interest net income, EBITDA, total assets, cash & cash equivalents, receivables, inventories, PP&E, total liabilities, interest-bearing debt, equity, operating/investing/financing cash flow, CAPEX, FCF and derived ratios.
 
 ## Ratios
-Gross margin, operating margin, net margin, EBITDA margin, ROA, ROE, ROIC (where calculable), current ratio, quick ratio, debt-to-equity, equity ratio, debt dependency, interest coverage, net debt/EBITDA, asset turnover, DSO, DIO, DPO, CCC, revenue growth and CFO/net income.
+Gross margin, operating margin, net margin, EBITDA margin, ROA, ROE, ROIC (where calculable), current ratio, quick ratio, debt-to-equity, equity ratio, debt dependency, interest coverage, net debt/EBITDA, asset turnover, DSO, DIO, DPO, CCC, revenue growth and CFO/net income. Ratios are calculated only when the underlying data are available; values should be interpreted in light of reporting-period and account-mapping differences.
 
 ## Domestic peer firms
 | Peer | Ticker | Rationale |
@@ -42,7 +44,14 @@ Peers are provided for domestic industry benchmarking; they are not identical bu
 - `docs/`: GitHub Pages site
 
 ## API Secret
-Set repository secret:
-`OPENDART_API_KEY`
+In **Settings → Secrets and variables → Actions → Repository secrets**, set either:
+- `OPENDART_API_KEY` (recommended), or
+- `DART_API_KEY` (also supported).
 
-Do not put the API key in source files, README, or commits.
+The workflow uses `OPENDART_API_KEY` first and falls back to `DART_API_KEY`. The secret value must be the API key issued by OpenDART. Never place the key in source files, README, logs, or commits.
+
+## Troubleshooting
+- Open **Actions → Monthly DART update and deploy → Run workflow** to start a manual run.
+- If the run fails at **Validate DART API secret**, add or rename the repository secret to one of the exact names above.
+- If validation passes but collection fails, inspect the **Fetch DART** step for the DART response status/message.
+- Dashboard deployment runs only when an update is actually scheduled or manually/push triggered; non-first-day scheduled checks are skipped.
